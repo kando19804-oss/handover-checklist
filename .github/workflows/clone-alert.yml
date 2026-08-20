@@ -30,7 +30,6 @@ on:
 
 permissions:
   contents: read
-  administration: read # traffic API 用
 
 jobs:
   check-clone-activity:
