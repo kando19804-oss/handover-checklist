@@ -38,9 +38,19 @@ jobs:
     steps:
       - name: Check clone activity (last 14 days)
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.TRAFFIC_TOKEN }}
         run: |
           set -euo pipefail
+
+          # 🚨 GITHUB_TOKEN では読めない（2026-08-20 に実測で HTTP 403）。
+          # traffic API は push 権限を持つトークンしか読めず、workflow 用トークンには
+          # administration 権限を付与できない（`administration: read` は
+          # permissions のキーとして存在せずパースエラーになる）。
+          # → repo を 1 つに絞った fine-grained PAT を TRAFFIC_TOKEN に登録して使う。
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::warning::TRAFFIC_TOKEN が未設定のためスキップしました（監視は未稼働です）。"
+            exit 0
+          fi
 
           http=$(curl -sS -o /tmp/clones.json -w "%{http_code}" \
             -H "Authorization: Bearer ${GH_TOKEN}" \
