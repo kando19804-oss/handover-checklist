@@ -1,0 +1,69 @@
+name: Clone Alert
+
+# テンプレートが実際に使われ始めたことに気づくための週次チェック。
+#
+# 背景:
+#   GitHub の Traffic（クローン数・閲覧数）は **直近 14 日分しか保持されない**。
+#   （公式: https://docs.github.com/en/rest/metrics/traffic ）
+#   誰も見に行かないと、最初のクローンが起きたことも、それが何週目だったかも
+#   分からないまま消える。この指標はしばらく 0 が続く前提なので、
+#   「0 のときは無音・0 でなくなった週だけ鳴る」形にする。
+#
+# 通知:
+#   ROW の cert-expiry-monitor.yml / lookalike-domain-monitor.yml と同じ方式。
+#   ::error:: + exit 1 で Workflow failure メールが飛ぶ（新規シークレット不要）。
+#
+# ⚠️ ログに件数を出さない理由:
+#   このリポジトリは public なので **Actions のログも public**。件数を出すと
+#   「何週間 0 件のままか」が外から読める。出すのは検知の有無だけにして、
+#   実数は owner だけが見られる Insights → Traffic で確認する。
+#
+# カナリア:
+#   API が読めなかったときも exit 1 で落とす。黙って 0 を返し続ける監視は、
+#   壊れていることに誰も気づけない（ROW の lookalike 監視と同じ思想）。
+
+on:
+  schedule:
+    # 毎週月曜 08:30 JST = 日曜 23:30 UTC
+    - cron: "30 23 * * 0"
+  workflow_dispatch: # 手動実行も可能
+
+permissions:
+  contents: read
+  administration: read # traffic API 用
+
+jobs:
+  check-clone-activity:
+    name: Check clone activity
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check clone activity (last 14 days)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          http=$(curl -sS -o /tmp/clones.json -w "%{http_code}" \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/traffic/clones")
+
+          if [ "${http}" != "200" ]; then
+            echo "::error::Traffic API を読めませんでした（HTTP ${http}）。監視自体が壊れている可能性があります。"
+            exit 1
+          fi
+
+          uniques=$(jq -r '.uniques // 0' /tmp/clones.json)
+
+          if ! [ "${uniques}" -ge 0 ] 2>/dev/null; then
+            echo "::error::Traffic API の応答を解釈できませんでした。監視自体が壊れている可能性があります。"
+            exit 1
+          fi
+
+          if [ "${uniques}" -gt 0 ]; then
+            echo "::error::直近 14 日でクローンが発生しました。件数は Insights → Traffic で確認してください（ログには出しません）。"
+            exit 1
+          fi
+
+          echo "検知なし（直近 14 日）。"
