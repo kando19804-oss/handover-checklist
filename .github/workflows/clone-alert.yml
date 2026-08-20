@@ -59,7 +59,12 @@ jobs:
             "https://api.github.com/repos/${GITHUB_REPOSITORY}/traffic/clones")
 
           if [ "${http}" != "200" ]; then
-            echo "::error::Traffic API を読めませんでした（HTTP ${http}）。監視自体が壊れている可能性があります。"
+            # API が返す message は原因の切り分けに使う（トークンそのものは絶対に出さない）。
+            #   "Resource not accessible by personal access token" → Administration: Read-only が付いていない
+            #   "Bad credentials"                                  → トークンが誤り or 失効
+            #   "Not Found"                                        → この repo がトークンの対象に入っていない
+            reason=$(jq -r '.message // "（メッセージなし）"' /tmp/clones.json 2>/dev/null || echo "（応答が JSON ではありません）")
+            echo "::error::Traffic API を読めませんでした（HTTP ${http}）: ${reason}"
             exit 1
           fi
 
