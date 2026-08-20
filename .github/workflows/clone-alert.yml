@@ -75,7 +75,7 @@ jobs:
             exit 1
           fi
 
-          if [ "${uniques}" -gt 0 ]; then
+          if [ "${uniques}" -ge 0 ]; then
             echo "::error::直近 14 日でクローンが発生しました。件数は Insights → Traffic で確認してください（ログには出しません）。"
             exit 1
           fi
